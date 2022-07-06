@@ -29,6 +29,17 @@ def stress_transform(stress_matrix,new_Xasis):
     
     return ( transform @ stress_matrix @ transform.T ).round(3)
     
+def extrapolation(data_a, data_b, toe):
+    
+    def dist(p1,p2):
+        return np.sqrt(np.sum(np.square(p1-p2)))
+    
+    a, sigma_a = data_a
+    b, sigma_b = data_b
+    d1 = dist(a,b)
+    d2 = dist(a,toe)
+     
+    return  sigma_b + (sigma_a - sigma_b) * (d1 + d2) / d1
     
 # #ex1
    
