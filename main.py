@@ -22,13 +22,58 @@ class Joints():
         self.brace = brace  # brace座標 
         self.N = N
         self.tw = tw
-        self.df = ''
+        self.df = None
         a,b, self.R, self.T = self.chord.values()
         c,d, self.r, self.t = self.brace.values()
-        self.a, self.b, self.c, self.d = np.array([a,b,c,d])
+        a, b, c, d = np.array([a,b,c,d])
+        self.a, self.b, self.c, self.d = a, b, c, d
+         
+        Uc = unit_vector(b-a)                                    #chord 中心線
+        U_gamma = unit_vector(d-c)                               #brace 中心線
+        U_alpha = unit_vector( np.cross(Uc, U_gamma) )           #chord 中心線 /brace 中心線 公垂線
+        U_beta = unit_vector( np.cross(U_gamma,U_alpha) )        # (brace 平面)
+        self.Uc      = Uc
+        self.U_gamma = U_gamma 
+        self.U_alpha = U_alpha
+        self.U_beta  = U_beta
+        self.beta    = np.dot(Uc,U_beta)
+        self.gamma   = np.dot(Uc,U_gamma)
         
+    def param_cal(self,order,theta):
+        a, _, c, _ =  self.a, self.b, self.c, self.d
+        R, _, r, _ =  self.R, self.T, self.r, self.t
+        Uc =      self.Uc                               #chord 中心線
+        U_gamma = self.U_gamma                          #brace 中心線
+        U_alpha = self.U_alpha      #chord 中心線 /brace 中心線 公垂線
+        U_beta =  self.U_beta   # (brace 平面)
+        beta =    self.beta
+        gamma =   self.gamma
         
-    def to_excel(self):  
+        #0階
+        C1 = np.dot(c-a , np.cross(U_alpha,Uc)) - r*gamma*np.sin(theta)
+        C2 = R**2 - ( np.dot(c-a,U_alpha) + r*np.cos(theta))**2
+        l = 1/beta *(-C1 + C2**0.5 )
+        PI = c + r*np.cos(theta) * U_alpha + r*np.sin(theta) * U_beta  + l * U_gamma
+        #1階
+        C1_1 = -r*gamma*np.cos(theta)
+        C2_1 = 2*r*np.sin(theta) * np.dot(c-a ,U_alpha) + 2* r**2 * np.cos(theta) * np.sin(theta)
+        l_1 =  1/beta *( -C1_1+C2_1/(2*C2**0.5) )
+        PI_1 = -r*np.sin(theta) * U_alpha + r*np.cos(theta) * U_beta  + l_1 * U_gamma     
+        #2階
+        C1_2 = r*gamma*np.sin(theta)
+        C2_2 = 2*r*np.cos(theta) * np.dot(c-a ,U_alpha) + 2* r**2 * ( np.cos(theta)**2 - np.sin(theta)**2 )
+        l_2 =  1/beta * (-C1_2 + 0.5 * C2_2 * C2**-0.5 - 0.25 * C2_1**2 * C2**-1.5)
+        PI_2 = -r*np.cos(theta) * U_alpha - r*np.sin(theta) * U_beta  + l_2 * U_gamma  
+        if order == 0:
+            return C1, C2, l, PI       
+        elif order == 1: 
+            return C1_1, C2_1, l_1, PI_1
+        elif order == 2: 
+            return C1_2, C2_2 ,l_2, PI_2
+        else:
+            raise BaseException("Error")            
+  
+    def cal_point(self):  
         
         def f(mu,radius): #R(√(1+S^2 ) μ_1+S^2/(3!√(1+S^2 )) μ_1^3+(S^4+4S^2)/(5!(1+S^2 )^1.5 ) μ_1^5)
             t1 = np.sqrt(1+S**2)
@@ -52,15 +97,15 @@ class Joints():
                     break
             return xx
         data = []  
-        a, b, c, d =  self.a, self.b, self.c, self.d
+        a, _, c, _ =  self.a, self.b, self.c, self.d
         R, T, r, t =  self.R, self.T, self.r, self.t
         #座標單位向量
-        Uc = unit_vector(b-a)                               #chord 中心線
-        U_gamma = unit_vector(d-c)                          #brace 中心線
-        U_alpha = unit_vector( np.cross(Uc, U_gamma) )      #chord 中心線 /brace 中心線 公垂線
-        U_beta = unit_vector( np.cross(U_gamma,U_alpha) )   # (brace 平面)
-        beta = np.dot(Uc,U_beta)
-        gamma = np.dot(Uc,U_gamma)
+        Uc =      self.Uc                               #chord 中心線
+        U_gamma = self.U_gamma                          #brace 中心線
+        U_alpha = self.U_alpha      #chord 中心線 /brace 中心線 公垂線
+        U_beta =  self.U_beta   # (brace 平面)
+        beta =    self.beta
+        gamma =   self.gamma
         
         La = 0.2 * np.sqrt(r*t)
         Lb_Brace = 0.65 * np.sqrt(r*t)
@@ -96,19 +141,12 @@ class Joints():
                          
             for time,x in enumerate(thetas):  
                 #角度函數
-                #0階
-                C1 = np.dot(c-a , np.cross(U_alpha,Uc)) - rr*gamma*np.sin(x)
-                C2 = R**2 - ( np.dot(c-a,U_alpha) + rr*np.cos(x))**2
-                l = 1/beta *(-C1 + C2**0.5 )
-                #1階
-                C1_1 = -rr*gamma*np.cos(x)
-                C2_1 = 2*rr*np.sin(x) * np.dot(c-a ,U_alpha) + 2* rr**2 * np.cos(x) * np.sin(x)
-                l_1 =  1/beta *( -C1_1+C2_1/(2*C2**0.5) )
+               
+                C1, C2, l, i = self.param_cal(0,x)       #0階
+                C1_1, C2_1, l_1, _ = self.param_cal(1,x) #1階
                 
-                i = c + rr*np.cos(x) * U_alpha + rr*np.sin(x) * U_beta  + l * U_gamma #接合橢圓函數
                 L= np.dot(i-a,Uc)
                 p_cf = a + L * Uc #垂足 chord
-                
                 
                 U_IF_c = (p_cf - i) /R          #徑向 chord
                 U_IT = unit_vector(np.round(-rr*np.sin(x) * U_alpha 
@@ -122,7 +160,6 @@ class Joints():
                 dataC = [Uc,U_IN_c,U_IF_c] 
                 dataB = [U_gamma,U_IN_b,U_IF_b]         
         
-          
                 temp = num(N)
                 
                 lengths = list(product(['弦桿'],[tw , tw+La, tw+ Lb_Saddle +delta_L * int(temp[time%(N*2)]) ] )) + \
@@ -166,12 +203,15 @@ class Joints():
                 df = pd.DataFrame(data)
                 df = pd.concat([df.iloc[:,:4] ,df[4].apply(pd.Series),df.iloc[:,5],df[6].apply(pd.Series)], axis = 1)
                 df.columns = ['rad','種類','內外側','距離','x','y','z','color','Local_切向','Local_徑向','Local_法向']
-                df.to_excel('點.xlsx')
+                
                 self.df = df 
-    
+                
+    def to_excel(self,path):
+        self.df.to_excel(path + '.xlsx')
+        
     def plot(self):  
-        if self.df=='':
-            self.to_excel()
+        if (type(self.df) == 'NoneType') or (self.df == None) :
+            self.cal_point()
         df = self.df
         a, b, c, d =  self.a, self.b, self.c, self.d
         R, r  =  self.R, self.r     
@@ -185,36 +225,11 @@ class Joints():
         print(f"My brace is {self.brace}")
         
     def inter(self,theta):
-        a, b, c, d =  self.a, self.b, self.c, self.d
-        R, r  =  self.R, self.r 
-        
-        #座標單位向量
-        Uc = unit_vector(b-a)                               #chord 中心線
-        U_gamma = unit_vector(d-c)                          #brace 中心線
-        U_alpha = unit_vector( np.cross(Uc, U_gamma) )      #chord 中心線 /brace 中心線 公垂線
-        U_beta = unit_vector( np.cross(U_gamma,U_alpha) )   # (brace 平面)
-    
-        beta = np.dot(Uc,U_beta)
-        gamma = np.dot(Uc,U_gamma)
-        #0階
-        C1 = np.dot(c-a , np.cross(U_alpha,Uc)) - r*gamma*np.sin(theta)
-        C2 = R**2 - ( np.dot(c-a,U_alpha) + r*np.cos(theta))**2
-        l = 1/beta *(-C1 + C2**0.5 )
-        PI = c + r*np.cos(theta) * U_alpha + r*np.sin(theta) * U_beta  + l * U_gamma
-        
-        #1階
-        C1_1 = -r*gamma*np.cos(theta)
-        C2_1 = 2*r*np.sin(theta) * np.dot(c-a ,U_alpha) + 2* r**2 * np.cos(theta) * np.sin(theta)
-        l_1 =  1/beta *( -C1_1+C2_1/(2*C2**0.5) )
-        PI_1 = -r*np.sin(theta) * U_alpha + r*np.cos(theta) * U_beta  + l_1 * U_gamma
-        
-        #2階
-        C1_2 = r*gamma*np.sin(theta)
-        C2_2 = 2*r*np.cos(theta) * np.dot(c-a ,U_alpha) + 2* r**2 * ( np.cos(theta)**2 - np.sin(theta)**2 )
-        l_2 =  1/beta * (-C1_2 + 0.5 * C2_2 * C2**-0.5 - 0.25 * C2_1**2 * C2**-1.5)
-        PI_2 = -r*np.cos(theta) * U_alpha - r*np.sin(theta) * U_beta  + l_2 * U_gamma
+        C1, C2, l, PI = self.param_cal(0,theta)       #0階
+        C1_1, C2_1, l_1, PI_1 = self.param_cal(1,theta) #1階 
+        C1_2, C2_2, l_2, PI_2 = self.param_cal(2,theta) #1階 
         return [PI,PI_1,PI_2]
-    
+
 # 弦桿中心線
 a = [-1421.00, 16246.00, -40360.00]
 b = [-1421.00, 16246.00,-29660.00]
@@ -244,4 +259,4 @@ brace2 = {'c':c2,'d':d2,'r':r2,'t':t2}
 point_j = Joints(chord,brace1)
 point_k = Joints(chord,brace2)
 
-Newton2d(point_j,point_k,[0,3/2*np.pi], prt_step = True)
+Newton2d(point_j,point_k,[0,np.pi], prt_step = True)

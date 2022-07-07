@@ -5,30 +5,24 @@ Created on Thu Jun 30 17:40:12 2022
 @author: 63791
 """
 import numpy as np
-from numpy import norm, cross, dot, array, matrix
-from scipy.spatial.transform import Rotation as R
+from numpy import matrix
+from numpy.linalg import norm
 
 
 
-def stress_transform(stress_matrix,new_Xasis):
+def stress_transform(stress_matrix, new_asis):
     
     def unit_vector(vector):
         return vector / norm(vector)
     
-    def cal_axis_angle(vector): 
-        vector = unit_vector( array(vector) )
-        x = array([1,0,0])
-        axis = unit_vector( cross (vector, x) )
-        angle = np.arccos( dot(vector, x) )
-        return axis, angle
-    
+    transform_matrix = []
+    for vec in new_asis:
+        transform_matrix.append(unit_vector(vec))
+    T = matrix(transform_matrix)
     stress_matrix = matrix( stress_matrix )
-    axis, theta = cal_axis_angle( new_Xasis )
-    rot = R.from_rotvec(theta * axis)
-    transform = rot.as_matrix()
-    
-    return ( transform @ stress_matrix @ transform.T ).round(3)
-    
+    return  T @ stress_matrix @ T.T
+
+
 def extrapolation(data_a, data_b, toe):
     
     def dist(p1,p2):
@@ -41,17 +35,15 @@ def extrapolation(data_a, data_b, toe):
      
     return  sigma_b + (sigma_a - sigma_b) * (d1 + d2) / d1
     
-# #ex1
+#ex1
    
-# stress = [[-50,-20, 0],
-#           [-20,-30, 0],
-#           [  0,  0, 0]]
-# stress = np.matrix(stress)
+stress = [[-50,-20, 0],
+          [-20,-30, 0],
+          [  0,  0, 0]]
 
 
-# stress_transform(stress,[1,0.6176,0])
-# stress_transform(stress,[1,-0.2364,0])
-
+stress_transform(stress,[[1,np.tan(31.7*np.pi/180),0],[-np.tan(31.7*np.pi/180),1,0],[0,0,1]])
+stress_transform(stress,[[1,-0.2364,0],[np.tan(13.3*np.pi/180),1,0],[0,0,1]])
 
 
 # #ex2
@@ -63,3 +55,6 @@ def extrapolation(data_a, data_b, toe):
 
 # stress_transform(stress,[1,np.tan(-50*np.pi/180),0])
 # stress_transform(stress,[1,-0.2364,0])
+    
+
+

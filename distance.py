@@ -19,8 +19,8 @@ class Joints():
         
 
     def printall(self):
-        print(f"My chord is {chord}")    
-        print(f"My brace is {brace}")
+        print(f"My chord is {self.chord}")    
+        print(f"My brace is {self.brace}")
     
         
     def inter(self,theta):
