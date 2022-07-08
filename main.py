@@ -1,17 +1,13 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Oct 27 16:53:59 2021
 
-@author: 63791
-"""
 import numpy as np
+from numpy import array
 from function import Newton,unit_vector,num,sign_convention,Newton2d
 
 from itertools import chain,accumulate,product
 from fig import plot_figure
 import pandas as pd
 import matplotlib.pyplot as plt
-
+from rotation import stress_transform
 
 class Joints():
 # =============================================================================
@@ -39,9 +35,9 @@ class Joints():
         self.beta    = np.dot(Uc,U_beta)
         self.gamma   = np.dot(Uc,U_gamma)
         
-    def param_cal(self,order,theta):
+    def param_cal(self,order,theta,rr):
         a, _, c, _ =  self.a, self.b, self.c, self.d
-        R, _, r, _ =  self.R, self.T, self.r, self.t
+        R, _, r, _ =  self.R, self.T, rr, self.t
         Uc =      self.Uc                               #chord 中心線
         U_gamma = self.U_gamma                          #brace 中心線
         U_alpha = self.U_alpha      #chord 中心線 /brace 中心線 公垂線
@@ -99,6 +95,8 @@ class Joints():
         data = []  
         a, _, c, _ =  self.a, self.b, self.c, self.d
         R, T, r, t =  self.R, self.T, self.r, self.t
+        N, tw = self.N, self.tw
+        
         #座標單位向量
         Uc =      self.Uc                               #chord 中心線
         U_gamma = self.U_gamma                          #brace 中心線
@@ -142,8 +140,8 @@ class Joints():
             for time,x in enumerate(thetas):  
                 #角度函數
                
-                C1, C2, l, i = self.param_cal(0,x)       #0階
-                C1_1, C2_1, l_1, _ = self.param_cal(1,x) #1階
+                C1, C2, l, i = self.param_cal(0,x,rr)       #0階
+                C1_1, C2_1, l_1, _ = self.param_cal(1,x,rr) #1階
                 
                 L= np.dot(i-a,Uc)
                 p_cf = a + L * Uc #垂足 chord
@@ -236,27 +234,117 @@ b = [-1421.00, 16246.00,-29660.00]
 R = 1420
 T = 105
 
-# 斜撐中心線1
-c1 = [-2064.00, 14980.00, -34128.00]
-d1 = [-3709.00, 11079.00, -30614.00]
-r1 = 717
-t1 = 32
+# # 斜撐中心線1
+# c1 = [-2064.00, 14980.00, -34128.00]
+# d1 = [-3709.00, 11079.00, -30614.00]
+r = 717
+t = 32
 
-# 斜撐中心線2
-c2 = [-568.00, 15111.00, -34078.00]
-d2 = [1729.00, 11555.00, -30564.00]
-r2 = 717
-t2 = 32
+# # 斜撐中心線2
+# c2 = [-568.00, 15111.00, -34078.00]
+# d2 = [1729.00, 11555.00, -30564.00]
 
-# 其他
-tw = 10 #焊道腳長
-N = 9 # 每一象限幾等分
+# # 其他
+# tw = 10 #焊道腳長
+# N = 9 # 每一象限幾等分
+# brace1 = {'c':c1,'d':d1,'r':r1,'t':t1}
+# brace2 = {'c':c2,'d':d2,'r':r2,'t':t2}
+# point_j = Joints(chord,brace1)
+# point_j.cal_point()
+# df = point_j.df
+# Newton2d(point_j,point_k,[0,np.pi], prt_step = True)
+
 
 chord = {'a':a,'b':b,'R':R,'T':T}
-brace1 = {'c':c1,'d':d1,'r':r1,'t':t1}
-brace2 = {'c':c2,'d':d2,'r':r2,'t':t2}
 
-point_j = Joints(chord,brace1)
-point_k = Joints(chord,brace2)
+data = pd.read_excel('.\data\data.xlsx',index_col=0)
 
-Newton2d(point_j,point_k,[0,np.pi], prt_step = True)
+for i in range(1,5):
+    exec("c{0}, d{0} = data.filter(regex='({0}$)', axis=0).values".format(i))
+    exec("brace"+ str(i) +" = {'c':c" + str(i) + ",'d':d"+ str(i) +",'r':r,'t':t}")
+    exec("b{0} = Joints(chord,brace{0})".format(i))
+    exec("b{0}.cal_point()".format(i))
+    exec("df_{0} = b{0}.df".format(i))
+    exec("df_{0}['braceNumber'] = {0}".format(i))
+    
+
+from math import isclose
+test = pd.concat([df_1,df_2,df_3,df_4], ignore_index=True)
+coor = pd.read_excel('ANSYS_NODE_XYZ.xlsx',index_col=0)
+
+for index,values in coor.iterrows():
+    x,y,z = values
+    mask = \
+    (test['x'].apply(lambda s: isclose(s,x,abs_tol=0.9))) & \
+    (test['y'].apply(lambda s: isclose(s,y,abs_tol=0.9))) & \
+    (test['z'].apply(lambda s: isclose(s,z,abs_tol=0.9)))  
+    test.loc[test[mask].index,'NodeNumber'] = index 
+    
+filter_na = test['NodeNumber'].dropna().index     
+
+for i in range(1,31):
+    exec("df_{0}=pd.read_table(r'.\Final code\TESTMASK_{0}.txt',sep='\s+',header=None,index_col=0)".format(i))
+    exec("df_{0}.columns = ['X','Y','Z','XY','YZ','XZ']".format(i))
+    exec("df_dict_{0} = df_{0}.to_dict('index')".format(i))
+    exec("test['t{0}'] = test.loc[filter_na,'NodeNumber'].apply(lambda num : list(df_dict_{0}[num].values())) ".format(i))
+    
+
+table = pd.pivot_table(test,['Local_切向', 'Local_徑向', 'Local_法向'],['braceNumber','種類','內外側','rad'],[])
+output = {}
+
+def array2mat(array):
+    mat = \
+        [[array[0], array[3], array[5]],
+         [array[3], array[1], array[4]],
+         [array[5], array[4], array[2]]] 
+    return np.matrix(mat)
+    
+def mat2array(mat):
+    array = [mat[0,0], mat[1,1], mat[2,2], mat[0,1], mat[1,2], mat[0,2]]
+    return np.array(array)  
+
+def dist(series):
+    return np.sqrt(np.sum(series["x"]**2 + series["y"]**2 + series["z"]**2 ))
+
+def local_stress_cal(series):
+    stresses = series.apply(array2mat)
+    local_vec = list(local_axis[series.name].values())
+    return np.matrix([ mat2array(stress_transform(stress, local_vec)) for stress in stresses])
+
+
+for number, cb, position in product([1,2,3,4], ['弦桿','斜撐'],['內側','外側']):
+    test_filter = test.query("braceNumber == @number and  種類 == @cb and 內外側 == @position")
+    group = test_filter.groupby('rad')[['x','y','z']]
+    La = (group.aggregate(lambda s: s.iloc[0]- s.iloc[1]).apply(dist,axis=1))
+    Lb = (group.aggregate(lambda s: s.iloc[0]- s.iloc[2]).apply(dist,axis=1))
+    La = pd.DataFrame(La)
+    Lb = pd.DataFrame(Lb)
+    for i in range(1,31):
+        La["t{0}".format(i)] = La[0]  
+        Lb["t{0}".format(i)] = Lb[0]
+    La = La.drop([0], axis=1)
+    Lb = Lb.drop([0], axis=1)
+    
+    col = [ "t{0}".format(i) for i in range(1,31) ]
+    group2 = test_filter.groupby('rad')[col]
+    sigma_a = group2.aggregate(lambda s: array(s.iloc[1]))
+    sigma_b = group2.aggregate(lambda s: array(s.iloc[2]))
+    output[number,cb,position] = sigma_b + (sigma_a - sigma_b) * ((Lb-La) + La) / (Lb-La)
+
+final = {}
+for key,df in output.items():
+    local_axis =  (table.loc[key]).to_dict('index')
+    display = df.apply(local_stress_cal, axis=1)
+    for theta, value in display.items():
+        final[key+(theta,)] = value
+
+    
+    
+
+
+
+
+
+
+
+

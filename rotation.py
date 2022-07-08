@@ -10,13 +10,13 @@ from numpy.linalg import norm
 
 
 
-def stress_transform(stress_matrix, new_asis):
+def stress_transform(stress_matrix, local_axis):
     
     def unit_vector(vector):
         return vector / norm(vector)
     
     transform_matrix = []
-    for vec in new_asis:
+    for vec in local_axis:
         transform_matrix.append(unit_vector(vec))
     T = matrix(transform_matrix)
     stress_matrix = matrix( stress_matrix )
