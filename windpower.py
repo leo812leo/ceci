@@ -4,7 +4,9 @@ from itertools import chain,accumulate,product
 from fig import plot_figure
 import pandas as pd
 import matplotlib.pyplot as plt
-
+from math import isclose
+from rotation import stress_transform
+from numpy import array
 
 class Joints():
 # =============================================================================
@@ -31,8 +33,9 @@ class Joints():
         self.U_beta  = U_beta
         self.beta    = np.dot(Uc,U_beta)
         self.gamma   = np.dot(Uc,U_gamma)
+        self.step = 0
         
-    def param_cal(self,order,theta,rr):
+    def __param_cal(self,order,theta,rr):
         a, _, c, _ =  self.a, self.b, self.c, self.d
         R, _, r, _ =  self.R, self.T, rr, self.t
         Uc =      self.Uc                               #chord 中心線
@@ -65,7 +68,11 @@ class Joints():
             return C1_2, C2_2 ,l_2, PI_2
         else:
             raise BaseException("Error")            
-  
+    
+    def printall(self):
+        print(f"My chord is {self.chord}")    
+        print(f"My brace is {self.brace}")
+
     def cal_point(self):  
         
         def f(mu,radius): #R(√(1+S^2 ) μ_1+S^2/(3!√(1+S^2 )) μ_1^3+(S^4+4S^2)/(5!(1+S^2 )^1.5 ) μ_1^5)
@@ -137,8 +144,8 @@ class Joints():
             for time,x in enumerate(thetas):  
                 #角度函數
                
-                C1, C2, l, i = self.param_cal(0,x,rr)       #0階
-                C1_1, C2_1, l_1, _ = self.param_cal(1,x,rr) #1階
+                C1, C2, l, i = self.__param_cal(0,x,rr)       #0階
+                C1_1, C2_1, l_1, _ = self.__param_cal(1,x,rr) #1階
                 
                 L= np.dot(i-a,Uc)
                 p_cf = a + L * Uc #垂足 chord
@@ -200,10 +207,42 @@ class Joints():
                 df.columns = ['rad','種類','內外側','距離','x','y','z','color','Local_切向','Local_徑向','Local_法向']
                 
                 self.df = df 
+                self.step = 1
                 
-    def to_excel(self,path):
-        self.df.to_excel(path + '.xlsx')
+    def to_excel(self,category,path):
+        '''
         
+        Parameters
+        ----------
+        category : string or int
+            'points' or 1 :  Feature points
+            'local_IM' or 2 :  local coordinates' influence matrix
+            'global_IM' or 3 :  global coordinates' influence 
+            
+        path : string
+            File path.
+            
+        Returns 
+        -------
+        None.
+
+        '''
+        if category == 'points' or 1 :
+            self.df.to_excel(path + '.xlsx')
+
+        else:       
+            if category == 'local_IM' or 2:
+                generator = self.local_IM.items()
+            elif category == 'global_IM' or 3:   
+                generator = self.global_IM.items()
+                
+            with pd.ExcelWriter(path=path) as writer:
+                for key, df_temp in generator:
+                    df_temp = pd.DataFrame(df_temp)
+                    df_temp.index = ['X','Y','Z','XY','YZ','XZ']
+                    df_temp.columns = range(1,31)
+                    df_temp.to_excel(writer,sheet_name="{0}-{1}-{2:.5f}(rad)".format(key[0],key[1],key[2]) )                
+    
     def plot(self):  
         if (type(self.df) == 'NoneType') or (self.df == None) :
             self.cal_point()
@@ -215,17 +254,101 @@ class Joints():
         ax.scatter(df_plot.x, df_plot.y, df_plot.z, s=3, c= df_plot.color ,cmap= plt.get_cmap('plasma'),norm = plt.Normalize(vmin=1, vmax=4))
         plt.show()
 
-    def printall(self):
-        print(f"My chord is {self.chord}")    
-        print(f"My brace is {self.brace}")
         
     def inter(self,theta):
-        C1, C2, l, PI = self.param_cal(0,theta)       #0階
-        C1_1, C2_1, l_1, PI_1 = self.param_cal(1,theta) #1階 
-        C1_2, C2_2, l_2, PI_2 = self.param_cal(2,theta) #1階 
+        C1, C2, l, PI = self.__param_cal(0, theta, self.r)       #0階
+        C1_1, C2_1, l_1, PI_1 = self.__param_cal(1, theta, self.r) #1階 
+        C1_2, C2_2, l_2, PI_2 = self.__param_cal(2, theta, self.r) #1階 
         return [PI,PI_1,PI_2]
+        
+    def read_ANSYS_NODE(self):
+        coor= pd.read_excel('ANSYS_NODE_XYZ.xlsx',index_col=0)
+        df = self.df
+        
+        # Find Data's node NodeNumber(對應應力用)
+        for index,values in coor.iterrows():
+            x,y,z = values
+            mask = \
+            (df['x'].apply(lambda s: isclose(s,x,abs_tol=0.9))) & \
+            (df['y'].apply(lambda s: isclose(s,y,abs_tol=0.9))) & \
+            (df['z'].apply(lambda s: isclose(s,z,abs_tol=0.9)))  
+            df.loc[df[mask].index,'NodeNumber'] = index 
+        self.df = df
+        return coor
+            
+    def read_stress_data(self):
+        df = self.df
+        stress = ''
+        filter_na = df['NodeNumber'].dropna().index 
+        for i in range(1,31):
+            stress = eval("pd.read_table(r'.\Final code\TESTMASK_{0}.txt',sep='\s+',header=None,index_col=0)".format(i))   #read stresses
+            stress.columns = ['X','Y','Z','XY','YZ','XZ']
+            stress = stress.to_dict('index')    
+            df['t'+str(i)] = df.loc[filter_na,'NodeNumber'].apply(lambda num : list(stress[num].values())) 
+        self.df = df
+            
+    def local_cal(self):
+        def array2mat(array):
+            mat = \
+                [[array[0], array[3], array[5]],
+                 [array[3], array[1], array[4]],
+                 [array[5], array[4], array[2]]] 
+            return np.array(mat)
+            
+        def mat2array(mat):
+            array = [mat[0,0], mat[1,1], mat[2,2], mat[0,1], mat[1,2], mat[0,2]]
+            return np.array(array)  
 
-def Newton2d (point_j,point_k, ini_val = [0,3/2*np.pi], err=10**-13, maxiter = 100, prt_step = False):
+        def dist(series):
+            return np.sqrt(np.sum(series["x"]**2 + series["y"]**2 + series["z"]**2 ))
+
+        def local_stress_cal(series,local_axis):
+            stresses = series.apply(array2mat)
+            local_vec = list(local_axis[series.name].values())  #series.name = rad 每一列同一個local_axis
+            return np.array([ mat2array(stress_transform(stress, local_vec)) for stress in stresses]).T
+        
+        def normalize(series):
+            vec = [np.array((series.iloc[i]) ) for i in range(len(series))]  
+            return np.array(vec).T   
+        
+        df = self.df   
+        table = pd.pivot_table(df,['Local_切向', 'Local_徑向', 'Local_法向'],['種類','內外側','rad'],[])    #Local coordinate
+        global_IM = {}    # global influence matrix
+        for cb, position in product(['弦桿','斜撐'],['內側','外側']):
+            df_filter = df.query("種類 == @cb and 內外側 == @position")
+            group = df_filter.groupby('rad')[['x','y','z']]
+            La = (group.aggregate(lambda s: s.iloc[0]- s.iloc[1]).apply(dist,axis=1)) ; La = pd.DataFrame(La)  #La
+            Lb = (group.aggregate(lambda s: s.iloc[0]- s.iloc[2]).apply(dist,axis=1)) ; Lb = pd.DataFrame(Lb)  #Lb
+            
+           #資料格式整理
+            for i in range(1,31):
+                La["t{0}".format(i)] = La[0]; Lb["t{0}".format(i)] = Lb[0]       
+            La = La.drop([0], axis=1); Lb = Lb.drop([0], axis=1)
+            
+            col = [ "t{0}".format(i) for i in range(1,31) ]            
+            group2 = df_filter.groupby('rad')[col]
+            sigma_a = group2.aggregate(lambda s: array(s.iloc[1]))  #sigma_a
+            sigma_b = group2.aggregate(lambda s: array(s.iloc[2]))  #sigma_b
+            global_IM[cb,position] = sigma_b + (sigma_a - sigma_b) * ((Lb-La) + La) / (Lb-La)   #extrapolation
+            
+
+        
+        global_output_influence_matrix= {}
+        for key,df_iter in global_IM.items():
+            df_temp = df_iter.apply(normalize, axis=1)
+            for theta, value in df_temp.items():
+                global_output_influence_matrix[key+(theta,)] = value
+                
+        local_output_influence_matrix = {} # local influence matrix
+        for key,df_iter in global_IM.items():
+            local_axis =  (table.loc[key]).to_dict('index')
+            df_temp = df_iter.apply(lambda s : local_stress_cal(s,local_axis), axis=1)
+            for theta, value in df_temp.items():
+                local_output_influence_matrix[key+(theta,)] = value
+        self.local_IM = local_output_influence_matrix
+        self.global_IM = global_output_influence_matrix
+
+def Newton2d (point_j,point_k, ini_val = [0,np.pi], err=10**-13, maxiter = 100, prt_step = False):
     x1,x2 = ini_val
     for i in range(maxiter):
         j,k = point_j.inter(x1), point_k.inter(x2)

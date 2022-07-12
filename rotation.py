@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
 """
 Created on Thu Jun 30 17:40:12 2022
 
 @author: 63791
 """
 import numpy as np
-from numpy import matrix
+from numpy import array
 from numpy.linalg import norm
 
 
@@ -18,8 +17,8 @@ def stress_transform(stress_matrix, local_axis):
     transform_matrix = []
     for vec in local_axis:
         transform_matrix.append(unit_vector(vec))
-    T = matrix(transform_matrix)
-    stress_matrix = matrix( stress_matrix )
+    T = array(transform_matrix)
+    stress_matrix = array( stress_matrix )
     return  T @ stress_matrix @ T.T
 
 
