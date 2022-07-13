@@ -35,4 +35,3 @@ def sign_convention(data,cb,in_out):
             return np.sign( np.dot(U_IN, np.cross(U, U_IF)) ),np.sign( np.dot(U_IN,U))            
         elif cb == '斜撐':           
             return np.sign( np.dot(U_IN, np.cross(U, U_IF)) ),np.sign( np.dot(U_IN,U))    
-

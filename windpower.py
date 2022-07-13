@@ -7,6 +7,9 @@ import matplotlib.pyplot as plt
 from math import isclose
 from rotation import stress_transform
 from numpy import array
+import pyecharts.options as opts
+from pyecharts.charts import Line, Page, Timeline
+from collections import defaultdict
 
 class Joints():
 # =============================================================================
@@ -254,7 +257,6 @@ class Joints():
         ax.scatter(df_plot.x, df_plot.y, df_plot.z, s=3, c= df_plot.color ,cmap= plt.get_cmap('plasma'),norm = plt.Normalize(vmin=1, vmax=4))
         plt.show()
 
-        
     def inter(self,theta):
         C1, C2, l, PI = self.__param_cal(0, theta, self.r)       #0階
         C1_1, C2_1, l_1, PI_1 = self.__param_cal(1, theta, self.r) #1階 
@@ -347,6 +349,79 @@ class Joints():
                 local_output_influence_matrix[key+(theta,)] = value
         self.local_IM = local_output_influence_matrix
         self.global_IM = global_output_influence_matrix
+        
+    def data_plot(self):
+        def array2mat(array):
+            mat = \
+                [[array[0], array[3], array[5]],
+                 [array[3], array[1], array[4]],
+                 [array[5], array[4], array[2]]] 
+            return np.array(mat)
+            
+        def mat2array(mat):
+            array = [mat[0,0], mat[1,1], mat[2,2], mat[0,1], mat[1,2], mat[0,2]]
+            return np.array(array)  
+
+        def dist(series):
+            return np.sqrt(np.sum(series["x"]**2 + series["y"]**2 + series["z"]**2 ))
+
+        def local_stress_cal(series,local_axis):
+            stresses = series.apply(array2mat)
+            local_vec = list(local_axis[series.name].values())  #series.name = rad 每一列同一個local_axis
+            return np.array([ mat2array(stress_transform(stress, local_vec) ) for stress in stresses])
+        
+        df = self.df
+        table = pd.pivot_table(df,['Local_切向', 'Local_徑向', 'Local_法向'],['種類','內外側','rad'],[])
+        plot_data = defaultdict(dict)
+
+        for cb, position in product(['弦桿','斜撐'],['內側','外側']):
+            df_filter = df.query("種類 == @cb and 內外側 == @position")
+            group = df_filter.groupby('rad')[['x','y','z']]
+            La = (group.aggregate(lambda s: s.iloc[0]- s.iloc[1]).apply(dist,axis=1)) ; La = pd.DataFrame(La)  #La
+            Lb = (group.aggregate(lambda s: s.iloc[0]- s.iloc[2]).apply(dist,axis=1)) ; Lb = pd.DataFrame(Lb)  #Lb
+                        
+            col = [ "t{0}".format(i) for i in range(1,31) ]            
+            group2 = df_filter.groupby('rad')[col]
+            sigma_a = group2.aggregate(lambda s: array(s.iloc[1]))  #sigma_a
+            sigma_b = group2.aggregate(lambda s: array(s.iloc[2]))  #sigma_b 
+            local_axis =  (table.loc[(cb,position)]).to_dict('index')
+            
+            sigma_a_local = sigma_a.apply(lambda s: local_stress_cal(s,local_axis), axis=1)
+            sigma_b_local = sigma_b.apply(lambda s: local_stress_cal(s,local_axis), axis=1)
+            sigma_t_local = pd.DataFrame(sigma_b_local) + pd.DataFrame((sigma_a_local - sigma_b_local)) * (Lb) / (Lb-La)
+            sigma_t_local = sigma_t_local[0]
+            for theta in sigma_a_local.index:
+                for step in range(1,31):
+                    for direction in range(1,7):
+                        plot_data[(cb, position, 'a')].setdefault(direction,{}).setdefault(step,{}).setdefault( theta, round(sigma_a_local[theta][step-1,direction-1], 3) )
+                        plot_data[(cb, position, 'b')].setdefault(direction,{}).setdefault(step,{}).setdefault( theta, round(sigma_b_local[theta][step-1,direction-1], 3) )
+                        plot_data[(cb, position, 't')].setdefault(direction,{}).setdefault(step,{}).setdefault( theta, round(sigma_t_local[theta][step-1,direction-1], 3) )
+            
+            page = Page(layout=Page.DraggablePageLayout)
+            for direction in range(1,7):
+                tl = Timeline(init_opts = opts.InitOpts(height="200px"))
+                for step in range(1,31):
+                    L =(
+                            Line()
+                            .add_xaxis(list((df.query("種類 == @cb and 內外側 == @position")['rad'].unique()*180/np.pi).round(0) ) )
+                            .add_yaxis("a", list(plot_data[(cb, position, 'a')][direction][step].values()) )
+                            .add_yaxis("b", list(plot_data[(cb, position, 'b')][direction][step].values()) )
+                            .add_yaxis("toe", list(plot_data[(cb, position, 't')][direction][step].values()) )
+                            .set_series_opts(
+                                areastyle_opts=opts.AreaStyleOpts(opacity=0.5),
+                                label_opts=opts.LabelOpts(is_show=False),
+                            )
+                            .set_global_opts(
+                                title_opts=opts.TitleOpts(title="\u03C3{1} - step{0}-".format(step,['X','Y','Z','XY','YZ','XZ'][direction-1])),
+                                yaxis_opts=opts.AxisOpts(name = '應力'),
+                                xaxis_opts=opts.AxisOpts(
+                                    type_ = 'value', is_show = True, name_rotate = 30, interval= 30, max_ = 360, name = '角度(dergree)',
+                                ),
+                            )
+                        )    
+                    tl.add(L, "{}step".format(step))
+                page.add(tl)
+            page.render("{0}{1}.html".format(cb, position))
 
 def Newton2d (point_j,point_k, ini_val = [0,np.pi], err=10**-13, maxiter = 100, prt_step = False):
     x1,x2 = ini_val

@@ -34,12 +34,15 @@ brace2 = {'c':c2,'d':d2 ,'r':r,'t':t}
 # =============================================================================
 b1 = wp.Joints(chord,brace1)
 b1.cal_point()
+
 b1.read_ANSYS_NODE()
 b1.read_stress_data()
-La, Lb, table = b1.local_cal()
-
-
+b1.local_cal()
+b1.data_plot()
 
 b2 = wp.Joints(chord,brace2)
-
 wp.Newton2d(b1,b2)
+
+
+import os
+os.system('python test.py')

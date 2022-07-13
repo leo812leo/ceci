@@ -31,7 +31,7 @@ def local_stress_cal(series,local_axis):
     stresses = series.apply(array2mat)
     local_vec = list(local_axis[series.name].values())  #series.name = rad 每一列同一個local_axis
     return np.array([ mat2array(stress_transform(stress, local_vec) ) for stress in stresses])
-
+        
 class AddTestCase(unittest.TestCase):
     def setUp(self):
         pass
@@ -52,6 +52,7 @@ class AddTestCase(unittest.TestCase):
         brace1 = {'c':c1,'d':d1 ,'r':r,'t':t}
         b1 = wp.Joints(chord, brace1)
         b1.cal_point()
+        
         b1.read_ANSYS_NODE()
         b1.read_stress_data()
         b1.local_cal()
@@ -108,13 +109,16 @@ class AddTestCase(unittest.TestCase):
         
         boolean = array( list(
             map( lambda x, y: isclose(x, y, rel_tol=0.01),
-            [x1, x2, distance],
-            [0.0258609, 3.1670503, 106.42])))
+            [distance],
+            [106.42])))
         self.assertTrue( boolean.all() ,"兩接合線最短直線距離有誤")
         
         
+
 if __name__ == '__main__':
     suite = unittest.TestSuite()
     suite.addTest(AddTestCase('test_localIM'))
     suite.addTest(AddTestCase('test_Newton2d'))
     unittest.TextTestRunner(verbosity=2).run(suite)
+    
+    
