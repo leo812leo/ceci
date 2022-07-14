@@ -55,7 +55,7 @@ class AddTestCase(unittest.TestCase):
         
         b1.read_ANSYS_NODE()
         b1.read_stress_data()
-        b1.local_cal()
+        b1.im_cal()
         im1 = b1.local_IM
         
         df = b1.df
@@ -64,10 +64,11 @@ class AddTestCase(unittest.TestCase):
         im2 = {}    
         for cb, position in product(['弦桿','斜撐'],['內側','外側']):
             df_filter = df.query("種類 == @cb and 內外側 == @position")
-            group = df_filter.groupby('rad')[['x','y','z']]
-            La = (group.aggregate(lambda s: s.iloc[0]- s.iloc[1]).apply(dist,axis=1)) ; La = pd.DataFrame(La)  #La
-            Lb = (group.aggregate(lambda s: s.iloc[0]- s.iloc[2]).apply(dist,axis=1)) ; Lb = pd.DataFrame(Lb)  #Lb
-                        
+            LL = pd.pivot_table(df_filter, '弧長','rad','距離')
+            La = pd.DataFrame(LL['a']-LL['toe'])
+            Lb = pd.DataFrame(LL['b']-LL['toe'])            
+            # La = (group.aggregate(lambda s: s.iloc[0]- s.iloc[1]).apply(dist,axis=1)) ; La = pd.DataFrame(La)  #La
+            # Lb = (group.aggregate(lambda s: s.iloc[0]- s.iloc[2]).apply(dist,axis=1)) ; Lb = pd.DataFrame(Lb)  #Lb                 
             col = [ "t{0}".format(i) for i in range(1,31) ]            
             group2 = df_filter.groupby('rad')[col]
             sigma_a = group2.aggregate(lambda s: array(s.iloc[1]))  #sigma_a
@@ -113,12 +114,9 @@ class AddTestCase(unittest.TestCase):
             [106.42])))
         self.assertTrue( boolean.all() ,"兩接合線最短直線距離有誤")
         
-        
-
 if __name__ == '__main__':
     suite = unittest.TestSuite()
     suite.addTest(AddTestCase('test_localIM'))
     suite.addTest(AddTestCase('test_Newton2d'))
     unittest.TextTestRunner(verbosity=2).run(suite)
-    
     
