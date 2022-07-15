@@ -174,9 +174,9 @@ class Joints():
                 # 距離計算
                 temp = num(N)
                 lengths = list(product(['弦桿'],[tw , tw+La, tw+ Lb_Saddle +
-                                               delta_L * temp[time%(N*2)] ] )) + \
+                                               delta_L * temp[time%(N*2)], tw + Lc] )) + \
                           list(product(['斜撐'],[tw , tw+La, tw+ Lb_Brace]))
-                for (cb ,length),position in zip(lengths,['toe','a','b']*2):
+                for (cb ,length),position in zip(lengths,['toe','a','b','c','toe','a','b']):
                     #切平面向量 弦桿: (U_IN_c,chord 中心線向量)      
                     #切平面向量 斜撐: (U_IN_b,brace 中心線向量)
                     tt =  abs(np.dot(U_IN_c,Uc)) if cb == '弦桿' else abs(np.dot(U_IN_b,U_gamma))
@@ -184,12 +184,14 @@ class Joints():
                     #切平面參數rr 弦桿=R  內斜撐=r-t 外斜撐=r
                     mu = iter_f(length,R) if cb == '弦桿' else iter_f(length,rr)
                     if in_out == '內側' and cb == '弦桿':
+                        if length == tw + Lc:
+                            continue
                         sc_n1,sc_n2 = sign_convention(dataC, cb, in_out)
                         L_Coor = np.array([-R*np.cos(mu),
                                            -sc_n1 * R * np.sin(mu), -sc_n2*S*R*np.sin(mu) ])
                         vec = np.array([U_IF_c,np.cross(-U_IF_c, Uc),Uc])
                         p = p_cf
-                        n = 5 if length == Lc else 1
+                        n = 1
                         output = [U_IT, U_IF_b, U_IN_b]
                     elif in_out == '外側' and cb == '弦桿':
                         sc_n1,sc_n2 = sign_convention(dataC, cb, in_out)
@@ -197,7 +199,7 @@ class Joints():
                                            sc_n1 * R * np.sin(mu), sc_n2*S*R*np.sin(mu) ])
                         vec =    np.array([U_IF_c,np.cross(Uc, U_IF_c),Uc])
                         p = p_cf
-                        n = 5 if length == Lc else 2
+                        n = 5 if length == tw +Lc else 2
                         output = [U_IT, U_IF_b, U_IN_b]
                     else:
                         sb_n1,sb_n2 = sign_convention(dataB,cb,in_out)
@@ -272,7 +274,7 @@ class Joints():
         self.read_stress_data()
     def read_ANSYS_NODE(self):
         coor= pd.read_excel(os.getcwd()+'\\ANSYS_NODE_XYZ.xlsx',index_col=0)
-        df = self.df
+        df = self.df #記憶體位置相同不用輸出
         # Find Data's node NodeNumber(對應應力用)
         for index,values in coor.iterrows():
             x,y,z = values
@@ -281,10 +283,9 @@ class Joints():
             (df['y'].apply(lambda s: isclose(s,y,abs_tol=0.9))) & \
             (df['z'].apply(lambda s: isclose(s,z,abs_tol=0.9)))
             df.loc[df[mask].index,'NodeNumber'] = index
-        self.df = df
         return coor
     def read_stress_data(self):
-        df = self.df
+        df = self.df #記憶體位置相同不用輸出
         stress = ''
         filter_na = df['NodeNumber'].dropna().index
         for i in range(1,31):
@@ -294,7 +295,6 @@ class Joints():
             stress = stress.to_dict('index')
             df['t'+str(i)] = df.loc[filter_na,'NodeNumber'].apply(
                 lambda num : list(stress[num].values()))
-        self.df = df
     def im_cal(self):
         def normalize(series):
             vec = [np.array((series.iloc[i]) ) for i in range(len(series))]
@@ -344,12 +344,7 @@ class Joints():
             df_filter = df.query("種類 == @cb and 內外側 == @position")
             LL = pd.pivot_table(df_filter, '弧長','rad','距離')
             La = pd.DataFrame(LL['a']-LL['toe'])
-            Lb = pd.DataFrame(LL['b']-LL['toe'])
-            # group = df_filter.groupby('rad')[['x','y','z']]
-            # La = (group.aggregate(lambda s: s.iloc[0]- s.iloc[1]).apply(dist,axis=1))
-            # La = pd.DataFrame(La)  #La
-            # Lb = (group.aggregate(lambda s: s.iloc[0]- s.iloc[2]).apply(dist,axis=1))
-            # Lb = pd.DataFrame(Lb)  #Lb      
+            Lb = pd.DataFrame(LL['b']-LL['toe'])    
             col = [ "t{0}".format(i) for i in range(1,31) ]
             #外插處理
             group2 = df_filter.groupby('rad')[col]
@@ -430,7 +425,51 @@ def Newton2d (point_j,point_k, ini_val = (0,np.pi), err=10**-13, maxiter = 100, 
         elif np.linalg.norm(delta_x)<err:
             break
     return x1, x2, np.linalg.norm(diff)
-def distance_check(list_of_joint) :
+def distance_check(b1,b2) :
+    def length_cal(p1, p2):
+        add = np.sum( (p1- p2)**2 )
+        return np.sqrt(add)
+    df1 = b1.df
+    df2 = b2.df
+    _,_, d_min = Newton2d(b1,b2)
+    # 取出弧長b 及 toe座標
+    toe_corr_dict = {1:'',2:''}
+    Lb_dic = {1:'',2:''}
+    for i in range(1,3):
+        exec("""df{0}_filter = df{0}.query("種類 == '弦桿' and 內外側 == '外側' and 距離 in ['b','toe']")\
+             [['rad','x','y','z','弧長','距離']]""".format(i))
+        exec("df{0}_filter.set_index('rad',inplace=True)".format(i))
+        exec("""Lb_dic[{0}] = df{0}_filter.query("距離 == 'b'")['弧長'].to_dict() """.format(i))
+        exec("""temp = df{0}_filter.query("距離 == 'toe'")[['x','y','z']] """.format(i))
+        exec("toe_corr_dict[{0}] = temp.apply(lambda s : array(s),axis=1).to_dict() ".format(i))
+    if d_min - b1.tw - b2.tw> max(Lb_dic[1].values()) + max(Lb_dic[2].values()):
+        return "Calculating unnecessarily, shortest distance is bigger than sum of two maximum Lb"
+    row_rad = df1_filter.index.unique()
+    col_rad = df2_filter.index.unique()
+    output = pd.DataFrame(index = row_rad, columns = col_rad)
+    for rad1, rad2 in product(row_rad, col_rad) :  
+        if length_cal(toe_corr_dict[1][rad1], toe_corr_dict[2][rad2]) <= Lb_dic[1][rad1] + Lb_dic[2][rad2]:
+            ans = True  # 不要a,b 取c 得為 True
+        else:
+            ans =False
+        output.loc[rad1, rad2] = ans
+    col = output.any(axis=1)
+    col = col[col].index # 要刪a,b的 rad
+    row = output.any(axis=0)
+    row = row[row].index
     
-    return 
+    #drop不要的a,b (in col)
+    mask1_ab = (df1['rad'].isin(col)) & (df1['距離'].isin(['a','b']))
+    df1 = df1.loc[~mask1_ab]  
+    #drop不要的 c (not in col)
+    mask1_c = (~df1['rad'].isin(col)) & (df1['距離'].isin(['c']))
+    df1 = df1[~mask1_c]       
+    #drop不要的a,b (in row)
+    mask2_ab = (df2['rad'].isin(row)) & (df2['距離'].isin(['a','b']))
+    df2 = df2.loc[~mask2_ab]  
+    #drop不要的 c (not in row)
+    mask2_c = (~df2['rad'].isin(row)) & (df2['距離'].isin(['c']))
+    df2 = df2[~mask2_c] 
+    b1.df = df1
+    b2.df = df2
     
