@@ -435,14 +435,30 @@ def distance_check(b1,b2) :
     # 取出弧長b 及 toe座標
     toe_corr_dict = {1:'',2:''}
     Lb_dic = {1:'',2:''}
-    for i in range(1,3):
-        exec("""df{0}_filter = df{0}.query("種類 == '弦桿' and 內外側 == '外側' and 距離 in ['b','toe']")\
-             [['rad','x','y','z','弧長','距離']]""".format(i))
-        exec("df{0}_filter.set_index('rad',inplace=True)".format(i))
-        exec("""Lb_dic[{0}] = df{0}_filter.query("距離 == 'b'")['弧長'].to_dict() """.format(i))
-        exec("""temp = df{0}_filter.query("距離 == 'toe'")[['x','y','z']] """.format(i))
-        exec("toe_corr_dict[{0}] = temp.apply(lambda s : array(s),axis=1).to_dict() ".format(i))
-    if d_min - b1.tw - b2.tw> max(Lb_dic[1].values()) + max(Lb_dic[2].values()):
+    df1_filter = df1.query("種類 == '弦桿' and 內外側 == '外側' and 距離 in ['b','toe']")\
+              [['rad','x','y','z','弧長','距離']]
+    df1_filter.set_index('rad',inplace=True)
+    Lb_dic[1] = df1_filter.query("距離 == 'b'")['弧長'].to_dict()
+    temp = df1_filter.query("距離 == 'toe'")[['x','y','z']]
+    toe_corr_dict[1] = temp.apply(lambda s : array(s),axis=1).to_dict()
+    
+    df2_filter = df2.query("種類 == '弦桿' and 內外側 == '外側' and 距離 in ['b','toe']")\
+              [['rad','x','y','z','弧長','距離']]
+    df2_filter.set_index('rad',inplace=True)
+    Lb_dic[2] = df2_filter.query("距離 == 'b'")['弧長'].to_dict()
+    temp = df2_filter.query("距離 == 'toe'")[['x','y','z']]
+    toe_corr_dict[2] = temp.apply(lambda s : array(s),axis=1).to_dict()    
+    
+    
+    
+    # for ii in range(1,3):
+    #     exec("""df{0}_filter = df{0}.query("種類 == '弦桿' and 內外側 == '外側' and 距離 in ['b','toe']")\
+    #           [['rad','x','y','z','弧長','距離']]""".format(ii),globals(),locals())
+    #     exec("df{0}_filter.set_index('rad',inplace=True)".format(ii),globals(),locals())
+    #     exec("""Lb_dic[{0}] = df{0}_filter.query("距離 == 'b'")['弧長'].to_dict() """.format(ii),globals(),locals())
+    #     exec("""temp = df{0}_filter.query("距離 == 'toe'")[['x','y','z']] """.format(ii),globals(),locals())
+    #     exec("toe_corr_dict[{0}] = temp.apply(lambda s : array(s),axis=1).to_dict() ".format(ii),globals(),locals())   
+    if d_min - b1.tw - b2.tw > max(Lb_dic[1].values()) + max(Lb_dic[2].values()):
         return "Calculating unnecessarily, shortest distance is bigger than sum of two maximum Lb"
     row_rad = df1_filter.index.unique()
     col_rad = df2_filter.index.unique()
@@ -472,4 +488,3 @@ def distance_check(b1,b2) :
     df2 = df2[~mask2_c] 
     b1.df = df1
     b2.df = df2
-    
