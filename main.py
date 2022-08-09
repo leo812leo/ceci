@@ -38,13 +38,12 @@ b2 = wp.Joints(chord,brace2)
 b2.cal_point()
 
 wp.distance_check(b1,b2)
+b1.data_to_ansys()
 
-b1.to_excel(1,'points1.xlsx')
-b2.to_excel(1,'points1.xlsx')
+#b1.to_excel(1,'points1.xlsx')
+#b2.to_excel(1,'points1.xlsx')
 
 b1.read_ansys_data()
-#b1.read_ANSYS_NODE()
-#b1.read_stress_data()
 b1.im_cal()
 b1.to_excel(2,'local_IM.xlsx')
 b1.to_excel(3,'global_IM.xlsx')

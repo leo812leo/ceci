@@ -52,9 +52,9 @@ class AddTestCase(unittest.TestCase):
         brace1 = {'c':c1,'d':d1 ,'r':r,'t':t}
         b1 = wp.Joints(chord, brace1)
         b1.cal_point()
-        
-        b1.read_ANSYS_NODE()
-        b1.read_stress_data()
+        b1.brace_num = 4
+        b1.read_ansys_data(1)
+        b1.df =  b1.df.query("距離 != 'c'")
         b1.im_cal()
         im1 = b1.local_IM
         

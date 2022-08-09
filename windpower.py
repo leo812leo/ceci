@@ -24,10 +24,12 @@ class Joints():
     """
     class docstring
     """
+    brace_num = 0
 # =============================================================================
 # 屬性(Attribute)
 # =============================================================================
     def __init__(self, chord, brace, tw=10, N=9):
+        Joints.brace_num += 1
         self.chord = chord  # chord座標
         self.brace = brace  # brace座標
         self.N = N
@@ -241,6 +243,7 @@ class Joints():
         if category in ('points', 1) :
             self.df.to_excel(path)
         else:
+            n = (self.brace_num + 1) * 6 
             if category in ('local_IM', 2):
                 generator = self.local_IM.items()
             elif category in ('global_IM', 3):
@@ -249,9 +252,20 @@ class Joints():
                 for key, df_temp in generator:
                     df_temp = pd.DataFrame(df_temp)
                     df_temp.index = ['X','Y','Z','XY','YZ','XZ']
-                    df_temp.columns = range(1,31)
+                    df_temp.columns = range(1,n+1)
                     df_temp.to_excel(writer,
                                     sheet_name="{0}-{1}-{2:.5f}(rad)".format(key[0],key[1],key[2]) )
+    def data_to_ansys(self,path="output.txt"):
+        def printout(s):
+            return str(s.iloc[0])+','+str(s.iloc[1])+',' + str(s.iloc[2])
+        df = self.df
+        df = df.query("距離 != 'toe'")
+        output = df[['z','x','y']].apply( printout ,axis = 1)
+        f = open(path, 'w')
+        f.write('3d=true\n')
+        for i in output:
+            f.write(i+'\n\n')
+        f.close()
     def plot(self):
         if isinstance(self.df,'NoneType'):
             self.cal_point()
@@ -269,11 +283,15 @@ class Joints():
         _, _, _, PI_1 = self.__param_cal(1, theta, self.r) #1階
         _, _, _, PI_2 = self.__param_cal(2, theta, self.r) #1階
         return [PI,PI_1,PI_2]
-    def read_ansys_data(self):
-        self.read_ANSYS_NODE()
-        self.read_stress_data()
-    def read_ANSYS_NODE(self):
-        coor= pd.read_excel(os.getcwd()+'\\ANSYS_NODE_XYZ.xlsx',index_col=0)
+    def read_ansys_data(self,test=0):
+        if test == 1:
+            file = 'test1'
+        elif test == 0:
+            file = 'data'
+        self.read_ANSYS_NODE(file)
+        self.read_stress_data(file)
+    def read_ANSYS_NODE(self,file):
+        coor= pd.read_excel(os.getcwd()+ '\\' + file + r'\ANSYS_NODE_XYZ.xlsx',index_col=0)
         df = self.df #記憶體位置相同不用輸出
         # Find Data's node NodeNumber(對應應力用)
         for index,values in coor.iterrows():
@@ -284,12 +302,13 @@ class Joints():
             (df['z'].apply(lambda s: isclose(s,z,abs_tol=0.9)))
             df.loc[df[mask].index,'NodeNumber'] = index
         return coor
-    def read_stress_data(self):
+    def read_stress_data(self,file):
+        n = (self.brace_num + 1) * 6 
         df = self.df #記憶體位置相同不用輸出
         stress = ''
         filter_na = df['NodeNumber'].dropna().index
-        for i in range(1,31):
-            stress =  pd.read_table(r'.\Final code\TESTMASK_{0}.txt'.format(i),
+        for i in range(1,n+1):
+            stress =  pd.read_table(r'.\{0}\TESTMASK_{1}.txt'.format(file,i),
                                     sep=r'\s+',header=None,index_col=0)   #read stresses
             stress.columns = ['X','Y','Z','XY','YZ','XZ']
             stress = stress.to_dict('index')
@@ -300,27 +319,37 @@ class Joints():
             vec = [np.array((series.iloc[i]) ) for i in range(len(series))]
             return np.array(vec).T
         df = self.df
+        n = (self.brace_num + 1) * 6 
         table = pd.pivot_table(df,['Local_切向', 'Local_徑向', 'Local_法向'],
                                ['種類','內外側','rad'],[]) #Local coordinate
         global_IM = {}    # global influence matrix
         for cb, position in product(['弦桿','斜撐'],['內側','外側']):
             df_filter = df.query("種類 == @cb and 內外側 == @position")
+            c_rad_list = df_filter.query("距離 == 'c'")['rad'].tolist()
+            df_c = df_filter.query("rad in @c_rad_list and 距離 == 'c'")
+            df_filter = df_filter.query("rad not in @c_rad_list ")
             LL = pd.pivot_table(df_filter, '弧長','rad','距離')
             La = pd.DataFrame(LL['a']-LL['toe'])
             Lb = pd.DataFrame(LL['b']-LL['toe'])
            #資料格式整理
-            for i in range(1,31):
+            for i in range(1, n+1):
                 La["t{0}".format(i)] = La[0]
                 Lb["t{0}".format(i)] = Lb[0]
             La = La.drop([0], axis=1)
             Lb = Lb.drop([0], axis=1)
-            col = [ "t{0}".format(i) for i in range(1,31) ]
+            col = [ "t{0}".format(i) for i in range(1, n+1) ]
             #外插處理
             group2 = df_filter.groupby('rad')[col]
             sigma_a = group2.aggregate(lambda s: array(s.iloc[1]))  #sigma_a
             sigma_b = group2.aggregate(lambda s: array(s.iloc[2]))  #sigma_b
-            global_IM[cb,position] = \
+            global_IM[cb, position] = \
                 sigma_b + (sigma_a - sigma_b) * ((Lb-La) + La) / (Lb-La)   #extrapolation
+            if cb == '弦桿' and position == '外側':
+                col.insert(0, 'rad')
+                df_c = df_c[col]
+                df_c = df_c.set_index('rad')
+                for rad, value  in df_c.iterrows():
+                    global_IM[cb, position] = pd.concat([global_IM[cb, position], df_c])
         #globalt_influence_matrix
         global_output_influence_matrix= {}
         for key,df_iter in global_IM.items():
@@ -338,14 +367,18 @@ class Joints():
         self.global_IM = global_output_influence_matrix
     def data_plot(self):
         df = self.df
+        n = (self.brace_num + 1) * 6
         table = pd.pivot_table(df,['Local_切向', 'Local_徑向', 'Local_法向'],['種類','內外側','rad'],[])
         plot_data = defaultdict(dict)
         for cb, position in product(['弦桿','斜撐'],['內側','外側']):
             df_filter = df.query("種類 == @cb and 內外側 == @position")
+            c_rad_list = df_filter.query("距離 == 'c'")['rad'].tolist()
+            df_c = df_filter.query("rad in @c_rad_list and 距離 == 'c'")
+            df_filter = df_filter.query("rad not in @c_rad_list ")
             LL = pd.pivot_table(df_filter, '弧長','rad','距離')
             La = pd.DataFrame(LL['a']-LL['toe'])
             Lb = pd.DataFrame(LL['b']-LL['toe'])    
-            col = [ "t{0}".format(i) for i in range(1,31) ]
+            col = [ "t{0}".format(i) for i in range(1,n+1) ]
             #外插處理
             group2 = df_filter.groupby('rad')[col]
             sigma_a = group2.aggregate(lambda s: array(s.iloc[1]))  #sigma_a
@@ -359,7 +392,7 @@ class Joints():
             sigma_t_local = sigma_t_local[0]
             #整理出圖格式
             for theta in sigma_a_local.index:
-                for step in range(1,31):
+                for step in range(1,n+1):
                     for direction in range(1,7):
                         plot_data[(cb, position, 'a')].\
                             setdefault(direction,{}).setdefault(step,{}).\
@@ -374,7 +407,7 @@ class Joints():
             page = Page(layout=Page.DraggablePageLayout)
             for direction in range(1,7):
                 tl = Timeline(init_opts = opts.InitOpts(height="200px"))
-                for step in range(1,31):
+                for step in range(1,n+1):
                     L =(
                         Line()
                         .add_xaxis(
@@ -475,13 +508,13 @@ def distance_check(b1,b2) :
     row = row[row].index
     
     #drop不要的a,b (in col)
-    mask1_ab = (df1['rad'].isin(col)) & (df1['距離'].isin(['a','b']))
+    mask1_ab = (df1['rad'].isin(col)) & (df1['距離'].isin(['a','b']) & (df1['種類'] == '弦桿') & (df1['內外側'] == '外側'))
     df1 = df1.loc[~mask1_ab]  
     #drop不要的 c (not in col)
     mask1_c = (~df1['rad'].isin(col)) & (df1['距離'].isin(['c']))
     df1 = df1[~mask1_c]       
     #drop不要的a,b (in row)
-    mask2_ab = (df2['rad'].isin(row)) & (df2['距離'].isin(['a','b']))
+    mask2_ab = (df2['rad'].isin(row)) & (df2['距離'].isin(['a','b']) & (df2['種類'] == '弦桿'))
     df2 = df2.loc[~mask2_ab]  
     #drop不要的 c (not in row)
     mask2_c = (~df2['rad'].isin(row)) & (df2['距離'].isin(['c']))
